@@ -25,7 +25,43 @@ int main(int argc, char *argv[]){
     float u[2];
     float x_der[3];
     float y[3];
+
+    // float tempo_inicial;
+    // float tempo_atual;
+
+    /*
+        do{
+            tempo_atual = gettime()
+            if(flag_inicial == 1){
+                tempo_inical = atual;
+                flag_incial = 0;
+            }
+
+            get_u_t(t, u, PI);
+
+        // calcula x' 
+        derivate(u, x, x_der);
+
+        // calcula y
+        result_y(x, y);
+
+        // calcula o x
+        next_x(x, pre_x, x_der, DT);
+        for(i = 0; i < 3; i++){
+            pre_x[i] = x[i];
+        }        
+
+        write_file(tempo_atual - tempo_inicial , y, u);
+
+        usleep(30000);
+
+        } while((tempo_atual-tempo_inicial) < 20)
     
+    */
+
+
+
+/*    
     for(t = 0; t < 20; t= t + DT){
         
         get_u_t(t, u, PI);
@@ -44,7 +80,7 @@ int main(int argc, char *argv[]){
 
         write_file(t, y, u);
     }
-
+*/
     fclose(file);
 
     return 0;
