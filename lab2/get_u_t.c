@@ -1,21 +1,19 @@
 #include <stdio.h>
 #include "calculus.h"
-#define PI 3.14159265358979323846
 
-u_t get_u_t(float t){
-    u_t matrix_u;
+
+void get_u_t(const float t, float u[2], const float pi){
     if(t < 0){
-        matrix_u.linear_spd = 0;
-        matrix_u.ang_spd = 0;
+        u[0] = 0;
+        u[1] = 0;
     }
     else if( (t >= 0) && (t < 10) ){
-        matrix_u.linear_spd = 1;
-        matrix_u.ang_spd = 0.2 * PI;
+        u[0] = 1;
+        u[1] = 0.2 * pi;
     }
     else{
-        matrix_u.linear_spd = 1;
-        matrix_u.ang_spd = -0.2 * PI;
+        u[0] = 1;
+        u[1] = -0.2 * pi;
     }
     
-    return matrix_u;
 }
