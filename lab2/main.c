@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <unistd.h>
+#include <sys/time.h>
 #include "calculus.h"
 
 #define PI 3.14159265358979323846
@@ -21,23 +23,29 @@ int main(int argc, char *argv[]){
     float x[3] = {0, 0, 0};
     float pre_x[3] = {0, 0, 0};
     int i;
-    float t;
     float u[2];
     float x_der[3];
     float y[3];
 
-    // float tempo_inicial;
-    // float tempo_atual;
+    double t_inic;
+    struct timeval t_curr_tv;
+    double t_curr;
+    int flag_inicial = 1;
 
-    /*
-        do{
-            tempo_atual = gettime()
-            if(flag_inicial == 1){
-                tempo_inical = atual;
-                flag_incial = 0;
-            }
+    
+    do{
+        if(gettimeofday(&t_curr_tv, NULL) == -1){
+            printf("Erro em pegar o tempo\n");
+        }
 
-            get_u_t(t, u, PI);
+        if(flag_inicial == 1){
+            t_inic = t_curr_tv.tv_sec + (t_curr_tv.tv_usec / 1000000.0);
+            flag_inicial = 0;
+        }
+
+        t_curr = t_curr_tv.tv_sec + (t_curr_tv.tv_usec / 1000000.0);
+
+        get_u_t(t_curr - t_inic, u, PI);
 
         // calcula x' 
         derivate(u, x, x_der);
@@ -51,15 +59,11 @@ int main(int argc, char *argv[]){
             pre_x[i] = x[i];
         }        
 
-        write_file(tempo_atual - tempo_inicial , y, u);
+        write_file(t_curr - t_inic, y, u);
 
         usleep(30000);
 
-        } while((tempo_atual-tempo_inicial) < 20)
-    
-    */
-
-
+    } while((t_curr - t_inic) < 20);
 
 /*    
     for(t = 0; t < 20; t= t + DT){
