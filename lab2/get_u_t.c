@@ -1,19 +1,21 @@
+#define _USE_MATH_DEFINES
 #include <stdio.h>
+#include <math.h>
 #include "calculus.h"
 
 
-void get_u_t(const float t, float u[2], const float pi){
+void get_u_t(const float t, float u[2]){
     if(t < 0){
         u[0] = 0;
         u[1] = 0;
     }
     else if( (t >= 0) && (t < 10) ){
         u[0] = 1;
-        u[1] = 0.2 * pi;
+        u[1] = 0.2 * M_PI;
     }
     else{
         u[0] = 1;
-        u[1] = -0.2 * pi;
+        u[1] = -0.2 * M_PI;
     }
     
 }

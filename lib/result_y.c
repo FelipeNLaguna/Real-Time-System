@@ -1,4 +1,6 @@
+#include <math.h>
 #include "calculus.h"
+#define D 0.6
 
 /*
 int matrix_y[3][3] = {
@@ -9,10 +11,12 @@ int matrix_y[3][3] = {
 */
 
 void result_y(const float x[3], float y[3]){
-    int i;
+   
+    float seno_matriz = sin(x[2]);
+    float cos_matriz = cos(x[2]);
 
-    for(i = 0; i < 3; i++){
-       y[i] = x[i];
-    }
+    y[0] = x[0] + (0.5 * D * cos_matriz);
+    y[1] = x[1] + (0.5 * D * seno_matriz);
+    y[2] = x[2];
 
 }

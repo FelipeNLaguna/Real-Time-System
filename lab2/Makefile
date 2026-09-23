@@ -1,5 +1,5 @@
 TARGET=main
-SRCS=$(TARGET).c get_u_t.c write_file.c
+SRCS=$(TARGET).c 
 
 FLAGS= -O2 -Wall -MMD
 INCLUDE= -I. -I../include
