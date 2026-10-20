@@ -7,7 +7,7 @@
 #include <math.h>
 #include "calculus.h"
 
-#define DT 0.01
+#define DT 0.03
 #define DEADLINE 20000000
 
 FILE *file;
@@ -27,9 +27,9 @@ int main(int argc, char *argv[]){
     float x[3] = {0, 0, 0};
     float pre_x[3] = {0, 0, 0};
     int i;
-    float u[2];
+    double u[2];
     float x_der[3];
-    float y[3];
+    double y[3];
 
     struct timeval timer_init;
     double time_init;
