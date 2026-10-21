@@ -3,13 +3,13 @@
 
 // calula seno e cos
 // declara matriz
-void derivate(const float u[2], const float x[3], float x_der[3]){
+void derivate(const double u[2], const double x[3], double x_der[3]){
 
-    float seno_matriz = sin(x[2]);
-    float cos_matriz = cos(x[2]);
+    double seno_matriz = sin(x[2]);
+    double cos_matriz = cos(x[2]);
 
 /*
-    float matrix_x[3][2] = {
+    double matrix_x[3][2] = {
         {seno_matriz, 0},
         {cos_matriz, 0},
         {0, 1}

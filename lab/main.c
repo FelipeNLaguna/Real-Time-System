@@ -5,10 +5,12 @@
 #include <sys/types.h>
 #include <fcntl.h>
 #include <math.h>
+#include <stdint.h>
+#include <inttypes.h>
 #include "calculus.h"
 
 #define DT 0.03
-#define DEADLINE 20000000
+#define DURATION_US 20000000
 
 FILE *file;
 
@@ -24,15 +26,15 @@ int main(int argc, char *argv[]){
     // x[0] hold the position x_c
     // x[1] hold the position y_c
     // x[2] hold the degree 
-    float x[3] = {0, 0, 0};
-    float pre_x[3] = {0, 0, 0};
+    double x[3] = {0, 0, 0};
+    double pre_x[3] = {0, 0, 0};
     int i;
-    double u[2];
-    float x_der[3];
+    double u[2] = {0, 0};
+    double x_der[3];
     double y[3];
 
     struct timeval timer_init;
-    double time_init;
+    int64_t time_init;
 
     pid_t pid_generate_u, pid_sampling_y;
     
@@ -47,7 +49,7 @@ int main(int argc, char *argv[]){
     if(gettimeofday(&timer_init, NULL) == -1){
         printf("Erro em pegar o tempo inicial\n");
     }
-    time_init = (timer_init.tv_sec * 1000000) + timer_init.tv_usec;
+    time_init = ((int64_t)timer_init.tv_sec * 1000000) + (int64_t)timer_init.tv_usec;
 
     // first fork
     pid_generate_u = fork();
@@ -79,16 +81,16 @@ int main(int argc, char *argv[]){
         else if(pid_sampling_y > 0 ){
     
             struct timeval timer_simulator;
-            double time_sim = 0;
-            double time_exec_sim;
+            int64_t time_sim = 0;
+            int64_t time_exec_sim;
             double u_array[2];
 
-            while((time_sim - time_init) < DEADLINE){
+            while((time_sim - time_init) < DURATION_US){
                 if(gettimeofday(&timer_simulator, NULL) == -1){
                     printf("Erro em pegar o tempo do simulador_dat\n");
                 }
                 
-                time_sim = (timer_simulator.tv_sec * 1000000) + timer_simulator.tv_usec;
+                time_sim = ((int64_t)timer_simulator.tv_sec * 1000000) + (int64_t)timer_simulator.tv_usec;
 
                 if(read(pipe_gen_u_to_sim[0], u_array, sizeof(u_array)) > 0){
                     u[0] = u_array[0];
@@ -112,7 +114,7 @@ int main(int argc, char *argv[]){
                 if(gettimeofday(&timer_simulator, NULL) == -1){
                     printf("Erro em pegar o tempo do simulador_dat\n");
                 }
-                time_exec_sim = (timer_simulator.tv_sec * 1000000) + timer_simulator.tv_usec;
+                time_exec_sim = ((int64_t)timer_simulator.tv_sec * 1000000) + (int64_t)timer_simulator.tv_usec;
                 if((time_exec_sim - time_sim) <= 30000){
                     usleep(30000 - (time_exec_sim - time_sim));
                 }
@@ -124,24 +126,25 @@ int main(int argc, char *argv[]){
             // recebe os dados para salvar do arquivo do pipe e escreve
             close(pipe_sim_to_save_dat[1]);
             struct timeval timer_save_dat;
-            double time_save_dat = 0;
-            double time_exec_save_dat;
-            double y_value[3];
+            int64_t time_save_dat = 0;
+            int64_t time_exec_save_dat;
+            // falta implementar o result_y quando t < 0
+            double y_value[3] = {0.3, 0, 0};
 
-            while((time_save_dat - time_init) < DEADLINE){
+            while((time_save_dat - time_init) < DURATION_US){
                 if(gettimeofday(&timer_save_dat, NULL) == -1){
                     printf("Erro em pegar o tempo do save_dat\n");
                 }    
-                time_save_dat = (timer_save_dat.tv_sec * 1000000) + timer_save_dat.tv_usec;
+                time_save_dat = ((int64_t)timer_save_dat.tv_sec * 1000000) + (int64_t)timer_save_dat.tv_usec;
                 while(read(pipe_sim_to_save_dat[0], y_value, sizeof(y_value)) > 0){
                     // just clean the buffer
                 }
-                fprintf(file, "%g\t",(time_save_dat - time_init));
+                fprintf(file, "%"PRId64"\t",(time_save_dat - time_init));
                 fprintf(file, "%g\t%g\t%g\n", y_value[0], y_value[1], y_value[2]);
                 if(gettimeofday(&timer_save_dat, NULL) == -1){
                     printf("Erro em pegar o tempo do save_dat\n");
                 }
-                time_exec_save_dat = (timer_save_dat.tv_sec * 1000000) + timer_save_dat.tv_usec;
+                time_exec_save_dat = ((int64_t)timer_save_dat.tv_sec * 1000000) + (int64_t)timer_save_dat.tv_usec;
                 if((time_exec_save_dat - time_save_dat) <= 50000){
                     usleep(50000 - (time_exec_save_dat - time_save_dat));
                 }
@@ -154,16 +157,16 @@ int main(int argc, char *argv[]){
     else{
         
         struct timeval timer_u_curr;
-        double time_gen_u = 0 ;
-        double time_exec_gen_u;
+        int64_t time_gen_u = 0 ;
+        int64_t time_exec_gen_u;
         double vector_u[2];
 
-        while((time_gen_u - time_init) < DEADLINE){
+        while((time_gen_u - time_init) < DURATION_US){
             if(gettimeofday(&timer_u_curr, NULL) == -1){
                 printf("Erro em pegar o tempo\n");
             }
             
-            time_gen_u = (timer_u_curr.tv_sec * 1000000) + timer_u_curr.tv_usec;
+            time_gen_u = ((int64_t)timer_u_curr.tv_sec * 1000000) + (int64_t)timer_u_curr.tv_usec;
 
             close(pipe_gen_u_to_sim[0]);
 
@@ -187,7 +190,7 @@ int main(int argc, char *argv[]){
             if(gettimeofday(&timer_u_curr, NULL) == -1){
                 printf("Erro em pegar o tempo\n");
             }
-            time_exec_gen_u = (timer_u_curr.tv_sec * 1000000) + timer_u_curr.tv_usec;
+            time_exec_gen_u = ((int64_t)timer_u_curr.tv_sec * 1000000) + (int64_t)timer_u_curr.tv_usec;
             if((time_exec_gen_u - time_gen_u) <= 50000){
                 usleep(50000 - (time_exec_gen_u - time_gen_u));
             }
