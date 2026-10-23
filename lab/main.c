@@ -3,6 +3,7 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
@@ -84,6 +85,10 @@ int main(int argc, char *argv[]){
             int64_t time_sim = 0;
             int64_t time_exec_sim;
             double u_array[2];
+            // simulator just write to pipe_sim_to_dat
+            close(pipe_sim_to_save_dat[0]);
+            // simulator just read to pipe_gen_u_to_sim
+            close(pipe_gen_u_to_sim[1]);
 
             while((time_sim - time_init) < DURATION_US){
                 if(gettimeofday(&timer_simulator, NULL) == -1){
@@ -119,6 +124,9 @@ int main(int argc, char *argv[]){
                     usleep(30000 - (time_exec_sim - time_sim));
                 }
             }
+            close(pipe_sim_to_save_dat[1]);
+            close(pipe_gen_u_to_sim[0]);
+            exit(0);
         }
         
         // sampling y
@@ -149,8 +157,20 @@ int main(int argc, char *argv[]){
                     usleep(50000 - (time_exec_save_dat - time_save_dat));
                 }
             }
+            // close pipe
+            close(pipe_sim_to_save_dat[0]);
+            exit(0);
         }
 
+        close(pipe_gen_u_to_sim[0]);
+        close(pipe_gen_u_to_sim[1]);
+        close(pipe_sim_to_save_dat[0]);
+        close(pipe_sim_to_save_dat[1]);
+
+        while(wait(NULL) > 0); // wait for all the childrens finish
+        fclose(file);
+
+        return 0;
     }
     
     // generate u function
@@ -160,6 +180,7 @@ int main(int argc, char *argv[]){
         int64_t time_gen_u = 0 ;
         int64_t time_exec_gen_u;
         double vector_u[2];
+        close(pipe_gen_u_to_sim[0]);
 
         while((time_gen_u - time_init) < DURATION_US){
             if(gettimeofday(&timer_u_curr, NULL) == -1){
@@ -167,9 +188,6 @@ int main(int argc, char *argv[]){
             }
             
             time_gen_u = ((int64_t)timer_u_curr.tv_sec * 1000000) + (int64_t)timer_u_curr.tv_usec;
-
-            close(pipe_gen_u_to_sim[0]);
-
 
             if((time_gen_u - time_init) < 0){
                 vector_u[0] = 0;
@@ -195,10 +213,8 @@ int main(int argc, char *argv[]){
                 usleep(50000 - (time_exec_gen_u - time_gen_u));
             }
         }
+        close(pipe_gen_u_to_sim[1]);
+        exit(0);
     }
 
-
-    fclose(file);
-
-    return 0;
 }
