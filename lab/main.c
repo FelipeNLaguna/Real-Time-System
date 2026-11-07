@@ -23,12 +23,6 @@ int main(int argc, char *argv[]){
 
     file = fopen(argv[1], "w");
 
-    // x[0] hold the position x_c
-    // x[1] hold the position y_c
-    // x[2] hold the degree 
-    double x[3] = {0, 0, 0};
-    double pre_x[3] = {0, 0, 0};
-    int i;
     double u[2] = {0, 0};
     double x_der[3];
     double y[3];
@@ -84,6 +78,16 @@ int main(int argc, char *argv[]){
             int64_t time_sim = 0;
             int64_t time_exec_sim;
             double u_array[2];
+            // x[0] hold the position x_c
+            // x[1] hold the position y_c
+            // x[2] hold the degree 
+            double x[3] = {0, 0, 0};
+            double pre_x[3] = {0, 0, 0};
+            
+            // simulator just write to pipe_sim_to_dat
+            close(pipe_sim_to_save_dat[0]);
+            // simulator just read to pipe_gen_u_to_sim
+            close(pipe_gen_u_to_sim[1]);
 
             while((time_sim - time_init) < DURATION_US){
                 if(gettimeofday(&timer_simulator, NULL) == -1){
@@ -104,7 +108,7 @@ int main(int argc, char *argv[]){
 
                 // calcula o x
                 next_x(x, pre_x, x_der, DT);
-                for(i = 0; i < 3; i++){
+                for(int i = 0; i < 3; i++){
                     pre_x[i] = x[i];
                 }        
                 
