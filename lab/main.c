@@ -10,24 +10,16 @@
 #include <stdint.h>
 #include <inttypes.h>
 #include <errno.h>
+#include <string.h>
 #include "calculus.h"
 
 #define DT 0.03
 #define DURATION_US 20000000
 
-FILE *file;
-
 int main(int argc, char *argv[]){
 
     if(argc < 2){
-        printf("Falta o nome do arquivo para salvar os dados");
-        return 1;
-    }
-
-    file = fopen(argv[1], "w");
-
-    if(file == NULL){
-        perror("fopen");
+        fprintf(stderr, "Miss the file name\n");
         return 1;
     }
 
@@ -84,6 +76,19 @@ int main(int argc, char *argv[]){
         // simulator
         else if(pid_sampling_y > 0 ){
     
+            char sim_name_file[64];
+            int len_sim_name_file;
+            len_sim_name_file = snprintf(sim_name_file, sizeof(sim_name_file), "%s%s", argv[1], "_sim.dat");
+            if((len_sim_name_file < 0 ) || (len_sim_name_file >= sizeof(sim_name_file))){
+                fprintf(stderr, "simulator: The file name is too long\n");
+                return 1;
+            }
+            FILE * sim_file = fopen(sim_name_file, "w");
+            if(sim_file == NULL){
+                perror("simulator: fopen");
+                return 1;
+            }
+
             struct timeval timer_simulator;
             int64_t time_sim = 0;
             int64_t time_exec_sim;
@@ -131,6 +136,10 @@ int main(int argc, char *argv[]){
                 if(write(pipe_sim_to_save_dat[1], y, sizeof(y)) == -1){
                     printf("Erro ao escrever no sampling/n");
                 }
+
+                fprintf(sim_file, "%"PRId64"\t",(time_sim - time_init));
+                fprintf(sim_file, "%g\t%g\t%g\n", y[0], y[1], y[2]);
+
                 if(gettimeofday(&timer_simulator, NULL) == -1){
                     printf("Erro em pegar o tempo do simulador_dat\n");
                 }
@@ -164,12 +173,27 @@ int main(int argc, char *argv[]){
                 }
             }
             while((pid_wait > 0)); // if the wait was interruped for the system pid_wait = 1            
-            fclose(file);
+            fclose(sim_file);
             return 0;
         }
         
         // sampling y
         else{
+            FILE* sampling_file;
+            char sampling_name_file[64];
+            int len_sampling_name_file;
+            len_sampling_name_file = snprintf(sampling_name_file, sizeof(sampling_name_file), "%s%s", argv[1], "_sampling.dat");
+            if((len_sampling_name_file < 0 ) || (len_sampling_name_file >= sizeof(sampling_name_file))){
+                fprintf(stderr, "sampling: The file name is too long\n");
+                return 1;
+            }
+            
+            sampling_file = fopen(sampling_name_file, "w");
+            if(sampling_file == NULL){
+                perror("sampling: fopen");
+                return 1;
+            }
+
             // recebe os dados para salvar do arquivo do pipe e escreve
             if(close(pipe_sim_to_save_dat[1]) == -1){
                 perror("sampling: close pipe B write");
@@ -197,8 +221,8 @@ int main(int argc, char *argv[]){
                 while(read(pipe_sim_to_save_dat[0], y_value, sizeof(y_value)) > 0){
                     // just clean the buffer
                 }
-                fprintf(file, "%"PRId64"\t",(time_save_dat - time_init));
-                fprintf(file, "%g\t%g\t%g\n", y_value[0], y_value[1], y_value[2]);
+                fprintf(sampling_file, "%"PRId64"\t",(time_save_dat - time_init));
+                fprintf(sampling_file, "%g\t%g\t%g\n", y_value[0], y_value[1], y_value[2]);
                 if(gettimeofday(&timer_save_dat, NULL) == -1){
                     printf("Erro em pegar o tempo do save_dat\n");
                 }
@@ -212,6 +236,7 @@ int main(int argc, char *argv[]){
                 perror("sampling: close pipe B read");
                 return 1;
             }
+            fclose(sampling_file);
             exit(0);
         }
 
@@ -220,6 +245,21 @@ int main(int argc, char *argv[]){
     // generate u function
     else{
         
+        FILE* gen_u_file;
+        char gen_u_name_file[64];
+        int len_gen_u_name_file;
+        len_gen_u_name_file = snprintf(gen_u_name_file, sizeof(gen_u_name_file), "%s%s", argv[1], "_u.dat");
+        if((len_gen_u_name_file < 0) || (len_gen_u_name_file >= sizeof(gen_u_name_file))){
+            fprintf(stderr, "generate u: The file name is too long\n");
+            return 1;
+        }
+        
+        gen_u_file = fopen(gen_u_name_file, "w");
+        if(gen_u_file == NULL){
+            perror("gen u: fopen");
+            return 1;
+        }
+
         struct timeval timer_u_curr;
         int64_t time_gen_u = 0 ;
         int64_t time_exec_gen_u;
@@ -251,6 +291,9 @@ int main(int argc, char *argv[]){
             if(write(pipe_gen_u_to_sim[1], vector_u, sizeof(vector_u)) == -1){
                 printf("Erro ao mandar o u gerado\n");
             }
+
+            fprintf(gen_u_file, "%"PRId64"\t",(time_gen_u - time_init));
+            fprintf(gen_u_file, "%g\t%g\n", vector_u[0], vector_u[1]);
             
             if(gettimeofday(&timer_u_curr, NULL) == -1){
                 printf("Erro em pegar o tempo\n");
@@ -264,6 +307,7 @@ int main(int argc, char *argv[]){
             perror("generate u: close pipe write A end");
             return 1;
         }
+        fclose(gen_u_file);
         exit(0);
     }
 
