@@ -1,12 +1,15 @@
 #define _USE_MATH_DEFINES
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
 #include <inttypes.h>
+#include <errno.h>
 #include "calculus.h"
 
 #define DT 0.03
@@ -23,12 +26,11 @@ int main(int argc, char *argv[]){
 
     file = fopen(argv[1], "w");
 
-    // x[0] hold the position x_c
-    // x[1] hold the position y_c
-    // x[2] hold the degree 
-    double x[3] = {0, 0, 0};
-    double pre_x[3] = {0, 0, 0};
-    int i;
+    if(file == NULL){
+        perror("fopen");
+        return 1;
+    }
+
     double u[2] = {0, 0};
     double x_der[3];
     double y[3];
@@ -39,6 +41,7 @@ int main(int argc, char *argv[]){
     pid_t pid_generate_u, pid_sampling_y;
     
     // pipe declaration
+    // pipe A
     int pipe_gen_u_to_sim[2];
 
     if(pipe(pipe_gen_u_to_sim) == -1){
@@ -62,6 +65,7 @@ int main(int argc, char *argv[]){
     // main processor
     else if(pid_generate_u > 0){
         // ========================================================================================
+        // pipe B
         int pipe_sim_to_save_dat[2];
         if(pipe(pipe_sim_to_save_dat) == -1){
             printf("Erro no pipe simulator to save_data\n");
@@ -84,6 +88,22 @@ int main(int argc, char *argv[]){
             int64_t time_sim = 0;
             int64_t time_exec_sim;
             double u_array[2];
+            // x[0] hold the position x_c
+            // x[1] hold the position y_c
+            // x[2] hold the degree 
+            double x[3] = {0, 0, 0};
+            double pre_x[3] = {0, 0, 0};
+            
+            // simulator just write to pipe_sim_to_dat
+            if(close(pipe_sim_to_save_dat[0]) == -1){
+                perror("simulator: close pipe B read");
+                return 1;
+            }
+            // simulator just read to pipe_gen_u_to_sim
+            if(close(pipe_gen_u_to_sim[1]) == -1){
+                perror("simulator: close pipe A write");
+                return 1;
+            }
 
             while((time_sim - time_init) < DURATION_US){
                 if(gettimeofday(&timer_simulator, NULL) == -1){
@@ -104,7 +124,7 @@ int main(int argc, char *argv[]){
 
                 // calcula o x
                 next_x(x, pre_x, x_der, DT);
-                for(i = 0; i < 3; i++){
+                for(int i = 0; i < 3; i++){
                     pre_x[i] = x[i];
                 }        
                 
@@ -119,12 +139,50 @@ int main(int argc, char *argv[]){
                     usleep(30000 - (time_exec_sim - time_sim));
                 }
             }
+            if(close(pipe_sim_to_save_dat[1]) == -1){
+                perror("simulator: close pipe B write");
+                return 1;
+            }
+            if(close(pipe_gen_u_to_sim[0]) == -1){
+                perror("simulator: close pipe A read end");
+                return 1;
+            }
+            pid_t pid_wait;
+            do{
+                pid_wait = wait(NULL);
+                if(pid_wait == -1){
+                    if(errno == ECHILD){
+                        // all children reaped: normal loop exit
+                    }
+                    else if(errno == EINTR){
+                        fprintf(stderr, "wait() was interrupted by a signal\n");
+                        pid_wait = 1;
+                    }
+                    else{
+                        perror("wait");
+                    }
+                }
+            }
+            while((pid_wait > 0)); // if the wait was interruped for the system pid_wait = 1            
+            fclose(file);
+            return 0;
         }
         
         // sampling y
         else{
             // recebe os dados para salvar do arquivo do pipe e escreve
-            close(pipe_sim_to_save_dat[1]);
+            if(close(pipe_sim_to_save_dat[1]) == -1){
+                perror("sampling: close pipe B write");
+                return 1;
+            }
+            if(close(pipe_gen_u_to_sim[0]) == -1){
+                perror("sampling: close pipe A read");
+                return 1;
+            }
+            if(close(pipe_gen_u_to_sim[1]) == -1){
+                perror("sampling: close pipe A write");
+                return 1;
+            }
             struct timeval timer_save_dat;
             int64_t time_save_dat = 0;
             int64_t time_exec_save_dat;
@@ -149,6 +207,12 @@ int main(int argc, char *argv[]){
                     usleep(50000 - (time_exec_save_dat - time_save_dat));
                 }
             }
+            // close pipe
+            if(close(pipe_sim_to_save_dat[0]) == -1){
+                perror("sampling: close pipe B read");
+                return 1;
+            }
+            exit(0);
         }
 
     }
@@ -160,6 +224,10 @@ int main(int argc, char *argv[]){
         int64_t time_gen_u = 0 ;
         int64_t time_exec_gen_u;
         double vector_u[2];
+        if(close(pipe_gen_u_to_sim[0]) == -1){
+            perror("generate u: close pipe A read");
+            return 1;
+        }
 
         while((time_gen_u - time_init) < DURATION_US){
             if(gettimeofday(&timer_u_curr, NULL) == -1){
@@ -167,9 +235,6 @@ int main(int argc, char *argv[]){
             }
             
             time_gen_u = ((int64_t)timer_u_curr.tv_sec * 1000000) + (int64_t)timer_u_curr.tv_usec;
-
-            close(pipe_gen_u_to_sim[0]);
-
 
             if((time_gen_u - time_init) < 0){
                 vector_u[0] = 0;
@@ -195,10 +260,11 @@ int main(int argc, char *argv[]){
                 usleep(50000 - (time_exec_gen_u - time_gen_u));
             }
         }
+        if(close(pipe_gen_u_to_sim[1]) == -1){
+            perror("generate u: close pipe write A end");
+            return 1;
+        }
+        exit(0);
     }
 
-
-    fclose(file);
-
-    return 0;
 }
