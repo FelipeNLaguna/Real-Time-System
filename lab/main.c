@@ -152,13 +152,14 @@ int main(int argc, char *argv[]){
                 perror("simulator: close pipe B write");
                 return 1;
             }
-            if(close(pipe_gen_u_to_sim[0]) == -1){
-                perror("simulator: close pipe A read end");
-                return 1;
-            }
+            
             pid_t pid_wait;
+            int status;
+            int exit_status;
+            int signal_value;
+            int child_failed = 0;
             do{
-                pid_wait = wait(NULL);
+                pid_wait = wait(&status);
                 if(pid_wait == -1){
                     if(errno == ECHILD){
                         // all children reaped: normal loop exit
@@ -171,10 +172,31 @@ int main(int argc, char *argv[]){
                         perror("wait");
                     }
                 }
+                else{
+                    if(WIFEXITED(status)){
+                        exit_status = WEXITSTATUS(status);
+                        if(exit_status == 0){
+                            // exit return the correct value
+                        }
+                        else{
+                            fprintf(stderr, "child %d exited with code %d\n", pid_wait, exit_status);
+                            child_failed = 1;
+                        }
+                    }
+                    else if(WIFSIGNALED(status)){
+                        signal_value = WTERMSIG(status);
+                        fprintf(stderr, "child %d killed by signal: %d\n", pid_wait, signal_value);
+                        child_failed = 1;
+                    }
+                }
             }
-            while((pid_wait > 0)); // if the wait was interruped for the system pid_wait = 1            
+            while((pid_wait > 0)); // if the wait was interruped for the system pid_wait = 1   
+            if(close(pipe_gen_u_to_sim[0]) == -1){
+                perror("simulator: close pipe A read end");
+                return 1;
+            }         
             fclose(sim_file);
-            return 0;
+            return child_failed;
         }
         
         // sampling y
@@ -231,6 +253,25 @@ int main(int argc, char *argv[]){
                     usleep(50000 - (time_exec_save_dat - time_save_dat));
                 }
             }
+
+            ssize_t byte_read_pipe_b;
+            do{
+                byte_read_pipe_b = read(pipe_sim_to_save_dat[0], y_value, sizeof(y_value));
+                if(byte_read_pipe_b == -1){
+                    if(errno == EAGAIN){
+                        usleep(3000);
+                    }
+                    else{
+                        perror("sampling: read");
+                        exit(1);
+                    }
+                }
+                else if(byte_read_pipe_b > 0){
+                    // forwent the datas
+                }
+                
+            }while(byte_read_pipe_b != 0);
+
             // close pipe
             if(close(pipe_sim_to_save_dat[0]) == -1){
                 perror("sampling: close pipe B read");
