@@ -1,5 +1,7 @@
 # Lab 4 — notas de sessão (tutor)
 
+> **Histórico.** Notas atuais em `docs/lab5-session-notes.md`.
+
 Última sessão: 2026-10-21. Objetivo: **corrigir os erros do lab4**.
 
 - Enunciado: `docs/lab4.pdf` (depende do modelo do `docs/lab2.pdf` e da temporização do `docs/lab3.pdf`).
