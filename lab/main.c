@@ -5,6 +5,7 @@
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
 #include <fcntl.h>
 #include <math.h>
 #include <stdint.h>
@@ -12,6 +13,7 @@
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <sched.h>
 #include "calculus.h"
 
 #define DT 0.03
@@ -21,6 +23,9 @@
 #define T_SAMPLING_NS 50000000
 #define T_GEN_U_NS 50000000
 #define CHANGE_U_NS 10000000000
+#define PRIO_SIM 90
+#define PRIO_SAMPLING 70
+#define PRIO_GEN_U 80
 
 int64_t timespec_to_ns(struct timespec timer){
     return ((int64_t)timer.tv_sec * BILLION) + (int64_t)timer.tv_nsec; 
@@ -48,6 +53,13 @@ int main(int argc, char *argv[]){
 
     struct timespec timer_init;
     int64_t time_init;
+
+    struct sched_param param_rt;
+    param_rt.sched_priority = PRIO_SIM;
+    if(sched_setscheduler(0, SCHED_FIFO, &param_rt) == -1){
+        perror("simulator: sched_setsetscheduler");
+        return 1;
+    }
 
     pid_t pid_generate_u, pid_sampling_y;
     
@@ -133,6 +145,11 @@ int main(int argc, char *argv[]){
                 return 1;
             }
 
+            if(mlockall(MCL_CURRENT | MCL_FUTURE) == -1){
+                perror("simulator: mlockall");
+                return 1;
+            }
+
             while((next_activation_sim_time_ns - time_init) < DURATION_NS){
                 if(clock_gettime(CLOCK_MONOTONIC, &timer_simulator) == -1){
                     perror("simulator: clock_gettime");
@@ -157,7 +174,7 @@ int main(int argc, char *argv[]){
                 }        
                 
                 if(write(pipe_sim_to_save_dat[1], y, sizeof(y)) == -1){
-                    printf("Erro ao escrever no sampling/n");
+                    printf("Erro ao escrever no sampling\n");
                 }
 
                 fprintf(sim_file, "%"PRId64"\t",((time_sim - time_init)/1000));
@@ -262,8 +279,20 @@ int main(int argc, char *argv[]){
             int64_t next_activation_sampling_time_ns = 0;
             int64_t time_save_dat;
             int ret_clk_n_sampling;
+
+            struct sched_param param_sampling;
+            param_sampling.sched_priority = PRIO_SAMPLING;
+            if(sched_setscheduler(0, SCHED_FIFO, &param_sampling) == -1){
+                perror("sampling: sched_setscheduler");
+                return 1;
+            }
             // falta implementar o result_y quando t < 0
             double y_value[3] = {0.3, 0, 0};
+
+            if(mlockall(MCL_CURRENT | MCL_FUTURE) == -1){
+                perror("sampling: mlockall");
+                return 1;
+            }
 
             while((next_activation_sampling_time_ns - time_init) < DURATION_NS){
                 if(clock_gettime(CLOCK_MONOTONIC, &timer_save_dat) == -1){
@@ -345,8 +374,21 @@ int main(int argc, char *argv[]){
         int64_t time_gen_u;
         int ret_clk_n_gen;
         double vector_u[2];
+
+        struct sched_param param_gen_u;
+        param_gen_u.sched_priority = PRIO_GEN_U;
+        if(sched_setscheduler(0, SCHED_FIFO, &param_gen_u) == -1){
+            perror("generate u: sched_setscheduler");
+            return 1;
+        }
+
         if(close(pipe_gen_u_to_sim[0]) == -1){
             perror("generate u: close pipe A read");
+            return 1;
+        }
+
+        if(mlockall(MCL_CURRENT | MCL_FUTURE) == -1){
+            perror("generate u: mlockall");
             return 1;
         }
 
