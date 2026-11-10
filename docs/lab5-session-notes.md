@@ -1,6 +1,6 @@
 # Lab 5 — notas de sessão (tutor)
 
-Última atualização: 2026-11-09. Leia este arquivo **antes** de qualquer coisa ao
+Última atualização: 2026-11-10. Leia este arquivo **antes** de qualquer coisa ao
 retomar, em qualquer máquina. Substitui `docs/lab4-session-notes.md` (histórico).
 
 ## Como trabalhamos (combinado com o aluno)
@@ -75,7 +75,81 @@ Pronto e validado (até `7479387`):
 - **RT-09:** `CLOCK_MONOTONIC` + `clock_nanosleep(TIMER_ABSTIME)`, alvo
   `t0 + k·T` (`timespec_add_ns`, typo já corrigido), retry em `EINTR`.
 
-**RT-10 (implementado e validado em 09/11 na máquina RT, falta commit):**
+**RT-11 — testado na máquina RT em 10/11 (sem `sudo`, `bash -c`), commit `5f2e3f2`:**
+- ✅ normal: `exit=0`, `stderr` vazio, 400/667/400; `ps`: 3× `FF` 90/80/70 +
+  logger `TS`; fds do logger = só leitura do L + 3 arquivos; `VmLck` 0 no logger.
+- ✅ jitter caiu com o `fprintf` fora do laço: T std 0,026–0,033 → **0,007–0,015 ms**,
+  pior desvio ±0,1 ms (vs `rt10b`). 1º intervalo ~1,1–1,7 ms curto aqui.
+- ✅ logger congelado 18 s: **152 descartes** (41+41+70) vs ~150 previstos;
+  linhas faltando = descartes; buraco começa em ~16,95 s (pipe cheio como
+  previsto); `real exit=0`. T max no arquivo = 2100 ms (buraco, pergunta
+  pendente continua com ele).
+- ❌ **logger morto (`kill -TERM` aos 3 s): `real exit=141` (SIGPIPE) e as 3
+  tarefas RT morrem** — falha de tarefa não-RT derruba as hard RT. Bloqueia o
+  fechamento do RT-11.
+- 🟡 `read(...) > 0` no logger (`main.c:127`) trata erro (−1) como EOF e sai 0.
+- 🟡 Linhas `//fprintf` comentadas (317–318, 458–459, 581–582): apagar.
+
+**Correções de 10/11 (não commitadas ainda), retestadas — todas ✅:**
+- `signal(SIGPIPE, SIG_IGN)` no início do `main` (herdado por todos): `write`
+  sem leitor vira `EPIPE`. Decisão dele: `EPIPE` → não faz nada (tarefa RT
+  segue); `EAGAIN` → conta; outros → `perror` + `return 1` (bug).
+  Também resolve a cascata antiga (sampling morto não mata mais o simulator).
+- Logger: deixa de ser RT **antes** de tudo; `read` no `while` com retorno
+  guardado; −1 → `perror` + sai 1.
+- Testes: normal ✅ (`exit=0`, 400/667/400); logger morto aos 3 s ✅ (3 RT
+  seguem `FF` até 20 s, `wait` reporta sinal 15, `exit=1`; **arquivos com 0
+  bytes** — buffer do stdio perdido no SIGTERM, pergunta feita a ele);
+  sampling morto ✅ (sim e gen_u completos, sampling 61 linhas); logger
+  congelado 18 s ✅ (41+41+70 descartes, contadores certos).
+- Erros do aluno no meio do caminho (já corrigidos por ele): `read` fora do `while` (laço
+  infinito, não executado por risco de encher o disco), `break` no `EPIPE` do
+  sampling/gen_u, copiar-colar nos contadores.
+- Ainda abertos: pergunta do `EAGAIN` no pipe B (escrita do B é bloqueante →
+  `dropped_write_sampling` é código morto?; orçamento 24 B × 33/s vs 64 KiB);
+  `//fprintf` comentados (340–341, 490–491, 620–621); comentário
+  "just don't do nothing" (332); "record dropped" (651); retorno do
+  `signal()`; `return 1` no laço do simulator pula o `wait`.
+- Fechamento planejado: squash dos `wip:` (ver item 5 da lista abaixo).
+
+Lista original (escrita por ele antes dos testes):
+- 4º processo `run_logger(...)` (função), último `fork()`, filho do simulator;
+  `SCHED_OTHER` com `sched_priority = 0`; abre os 3 arquivos e é o único com
+  `fprintf`; lê `struct log_record` (id da tarefa `TASK_*` + `time_us` + u/y)
+  do pipe L até EOF; fecha todos os fds herdados que não usa.
+- Pipe L único, ponta de escrita `O_NONBLOCK` (bug de parênteses no `fcntl`
+  já corrigido). Registro ~56 B < `PIPE_BUF` → `write` atômico, tudo ou nada.
+- Tarefas RT: `EAGAIN` → `dropped_*++`, segue o ciclo; total no `stderr` só
+  se > 0, depois do laço.
+- Já validado (antes das últimas correções): 400/667/400; logger congelado 5 s
+  sem efeito nas RT — mas passou por sorte (5 s de registros cabem nos 64 KB
+  do pipe; ~4 KB/s → enche em ~16 s).
+- **Falta, nesta ordem:**
+  1. `else` para erros do `write` que não são `EAGAIN` (hoje somem em silêncio).
+  2. "record dropped" → "records" no gen_u (`main.c` ~605).
+  3. Rodar (aqui com `sudo`, ou na máquina RT):
+     `sudo ./main normal` → `exit=0`, `stderr` vazio, 400/667/400;
+     `sudo bash -c '( ./main frozen18; echo "real exit=$?" ) & sleep 1; L=$(pgrep -n -x main); kill -STOP $L; sleep 18; kill -CONT $L; wait'`
+     → mensagens de `records dropped` (~150 no total), `real exit=0`, menos
+     linhas, e **T max das RT em fração de ms**. Pergunta pendente para ele:
+     distinguir o T(k) grande causado pelo **buraco dos descartes** de um
+     atraso real da tarefa.
+  4. Verificar com `ps -axHo ... | grep '[m]ain'` (3× `FF` + 1× `TS`) e o
+     `/proc/<pid>/fd` do logger (só a leitura do L).
+  5. Juntar os `wip:`: `git reset --soft fbac71f`,
+     `git commit -m "feat: move file output to a non real-time logger process"`,
+     `git push --force-with-lease` (e na máquina RT: `git fetch && git reset --hard origin/main`).
+- 🟡 Antes das medições finais: **primeira ativação ~10 ms atrasada** (t0 lido
+  antes de fork/sched/mlockall/fopen → T mín ≈ 40 ms, J mín ≈ −10 ms). Conceito
+  apontado: liberação síncrona num instante futuro (t0 + offset).
+- 🟡 Mensagens do `run_logger` dizem `simulator:`/`sampling:`/`gen u:` em vez
+  de `logger:`; "pipe C" e "pipe L" para o mesmo pipe.
+- Ssh para a máquina RT falhou em 10/11 (erro não diagnosticado); ele preferiu
+  seguir no notebook com `sudo` (RT throttling 95 % aqui protege de travar).
+- Atenção: `plot_results.py` grava em `lab/figures/` e sobrescreve; arquivos
+  gerados com `sudo` são do root (`sudo chown $USER ...`).
+
+**RT-10 (implementado e validado em 09/11 na máquina RT, commit `2fbfa25`):**
 - Constantes `PRIO_SIM 90`, `PRIO_GEN_U 80`, `PRIO_SAMPLING 70` (RM; desempate
   gen_u > sampling pelo fluxo de dados).
 - O pai vira `SCHED_FIFO` **antes** do `fork()` → sem permissão falha com um
@@ -120,8 +194,8 @@ Pendências menores conhecidas (não bloqueiam):
 | Ticket | O quê | Onde testar | Status |
 |---|---|---|---|
 | RT-09 | temporização absoluta (`clock_nanosleep`) | — | ✅ feito |
-| RT-10 | `SCHED_FIFO` + prioridades RM + `mlockall` | máquina RT | ✅ validado, falta commit |
-| **RT-11** | gravação em disco numa tarefa **não** tempo real | máquina RT | **← próximo** |
+| RT-10 | `SCHED_FIFO` + prioridades RM + `mlockall` | máquina RT | ✅ feito (`2fbfa25`) |
+| **RT-11** | gravação em disco numa tarefa **não** tempo real | notebook (`sudo`) ou RT | **← em andamento: testado 10/11; falta corrigir SIGPIPE do logger morto + itens 1–2** |
 | RT-12 | tarefa não-RT que mostra y e u na tela | máquina RT | pendente |
 | RT-13 | medições sem/com carga (`hackbench`), `ps -axHo pid,policy,ni,pri,rtprio,pcpu,psr,cmd`, relatório | máquina RT | pendente |
 
