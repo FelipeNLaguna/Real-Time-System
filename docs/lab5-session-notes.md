@@ -105,12 +105,21 @@ Pronto e validado (até `7479387`):
 - Erros do aluno no meio do caminho (já corrigidos por ele): `read` fora do `while` (laço
   infinito, não executado por risco de encher o disco), `break` no `EPIPE` do
   sampling/gen_u, copiar-colar nos contadores.
-- Ainda abertos: pergunta do `EAGAIN` no pipe B (escrita do B é bloqueante →
-  `dropped_write_sampling` é código morto?; orçamento 24 B × 33/s vs 64 KiB);
-  `//fprintf` comentados (340–341, 490–491, 620–621); comentário
-  "just don't do nothing" (332); "record dropped" (651); retorno do
-  `signal()`; `return 1` no laço do simulator pula o `wait`.
-- Fechamento planejado: squash dos `wip:` (ver item 5 da lista abaixo).
+- **✅ RT-11 FECHADO em 10/11: commit `b7cf131` (squash dos `wip:`), notas em
+  `c79fe4e`, push feito.** Ele pediu a resposta da pergunta do pipe B e eu dei:
+  escrita bloqueante → nunca `EAGAIN` (contador morto) e simulator (90)
+  bloquearia no sampling (70) = inversão; orçamento ~800 B/s → ~82 s para
+  encher. Corrigido: `O_NONBLOCK` também na escrita do B (F_GETFL|F_SETFL
+  checados). Pipe A fica bloqueante (leitor tem prioridade maior, ~200 s para
+  encher) — justificar no relatório. `//fprintf` removidos. Teste final
+  no commit: `exit=0`, `stderr` vazio, 400/667/400.
+- Pendências menores que ficaram (não bloqueiam): comentário
+  "just don't do nothing" (`main.c:350`), "record dropped" (`main.c:660`),
+  retorno do `signal()` sem checar `SIG_ERR`, `return 1` no laço do simulator
+  pula o `wait`. Pergunta aberta para o relatório: arquivos com 0 bytes quando
+  o logger morre (buffer do stdio, `man 3 setvbuf`).
+- Ele quis "se livrar do ticket": sinal de cansaço com tickets longos — no
+  RT-12, escopo menor e fechamento mais rápido.
 
 Lista original (escrita por ele antes dos testes):
 - 4º processo `run_logger(...)` (função), último `fork()`, filho do simulator;
@@ -195,8 +204,8 @@ Pendências menores conhecidas (não bloqueiam):
 |---|---|---|---|
 | RT-09 | temporização absoluta (`clock_nanosleep`) | — | ✅ feito |
 | RT-10 | `SCHED_FIFO` + prioridades RM + `mlockall` | máquina RT | ✅ feito (`2fbfa25`) |
-| **RT-11** | gravação em disco numa tarefa **não** tempo real | notebook (`sudo`) ou RT | **← em andamento: testado 10/11; falta corrigir SIGPIPE do logger morto + itens 1–2** |
-| RT-12 | tarefa não-RT que mostra y e u na tela | máquina RT | pendente |
+| RT-11 | gravação em disco numa tarefa **não** tempo real | máquina RT | ✅ feito (`b7cf131`) |
+| RT-12 | tarefa não-RT que mostra y e u na tela | máquina RT | ✅ validado 10/11 (display por evento, guarda último y e último u; testes normal/congelado/morto/fds ok) — falta commit |
 | RT-13 | medições sem/com carga (`hackbench`), `ps -axHo pid,policy,ni,pri,rtprio,pcpu,psr,cmd`, relatório | máquina RT | pendente |
 
 **Decisão processos × threads (09/11): ficar com processos + pipes.** O aluno
@@ -244,3 +253,37 @@ não pausa nada (sintoma: `kill ... no such process` no `CONT`).
 Esperado: `real exit=0` e última linha completa nas corridas (≈ 21,5 s com a
 pausa); no terceiro, `child <pid> killed by signal`, `real exit=1` e `ps`
 vazio; no quarto, `Operation not permitted`, `exit=1`, nada sobrando.
+
+## RT-13 — procedimento combinado (10/11)
+
+- Carga = mesma do lab 3: `hackbench -s 10000 -l 10000 -g 12` (12 = cores
+  desta máquina), em laço num 2º terminal. `rt-tests` não instalado aqui:
+  `sudo apt install rt-tests` (ele digita a senha). Alternativa sem sudo:
+  `perf bench sched messaging` (port do hackbench) — só se não der para instalar,
+  e dizer no relatório.
+- Commitar o RT-12 **antes** de medir (medição amarrada a um commit).
+- Fechar navegador/áudio (PipeWire 83–88 fica acima de gen_u/sampling).
+- Prefixos `fifo_noload` / `fifo_load`; `ps` salvo em `ps_noload.txt` /
+  `ps_load.txt` aos ~5 s de execução.
+- Estatísticas: `MPLBACKEND=Agg python3 plot_results.py fifo_noload fifo_load`.
+  O `diff()` inclui o 1º intervalo (1ª ativação ~1–2 ms curta) → afeta T min /
+  J min; explicar no relatório ou desconsiderar.
+
+### RT-13 — medições feitas em 10/11 (máquina RT, por mim, a pedido dele)
+
+- Código: RT-12 **não commitado** no momento da medição (`main.c` +297/−146
+  sobre `c79fe4e`); ele deve commitar sem alterar o `main.c`.
+- Condições: navegador fechado, PipeWire ativo (83–88); display → `/dev/null`
+  nas duas; load avg 3,2 sem carga (IDE etc.) e 21,5 com carga
+  (`hackbench -s 10000 -l 10000 -g 12` em laço, 481 processos).
+- Arquivos em `lab/`: `fifo_{noload,load}_*.dat`, `ps_{noload,load}.txt`
+  (5 processos: 3 FF 90/80/70 + 2 TS), `loadavg_*.txt`,
+  `figures/timing_statistics.csv` + PNGs. Todos 400/667/400, `stderr` vazio.
+- Tabela do `plot_results.py` (inclui 1º intervalo): T std 0,022–0,026 ms sem
+  carga, 0,024–0,032 com carga; J min −0,42…−0,63 ms = só o 1º intervalo.
+- Sem o 1º intervalo: T std 0,008–0,014 ms sem carga, **0,004–0,006 com carga**;
+  latência L(k) média ~13–16 µs; L max 80–84 µs sem carga, **29–43 µs com
+  carga**; L(0) = 430–470 µs sem carga, 620–640 µs com carga.
+- Achados para o relatório: (1) com carga o jitter **diminui** — CPUs ociosas
+  entram em C-states profundos e a saída custa dezenas de µs; com carga não
+  dormem. (2) 1ª ativação atrasada (setup depois do t0) domina mín/máx.
