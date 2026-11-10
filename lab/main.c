@@ -51,7 +51,83 @@ void timespec_add_ns(struct timespec *timer, long period_nsec){
     }
 }
 
-int run_logger(int pipe_logger[2], const char *file_name, int pipe_sim[2], int pipe_u[2]){
+int run_display(int pipe_display[2], int pipe_sim[2], int pipe_u[2], int pipe_logger[2]){
+    struct sched_param param_display;
+    param_display.sched_priority = 0;
+    if(sched_setscheduler(0, SCHED_OTHER, &param_display) == -1){
+        perror("display: sched_setscheduler");
+        return 1;
+    }
+
+    if(close(pipe_logger[0]) == -1){
+        perror("display: close pipe C read");
+        return 1;
+    }
+    if(close(pipe_logger[1]) == -1){
+        perror("display: close pipe C write");
+        return 1;
+    }
+    if(close(pipe_sim[0]) == -1){
+        perror("display: close pipe B read");
+        return 1;
+    }
+    if(close(pipe_sim[1]) == -1){
+        perror("display: close pipe B write");
+        return 1;
+    }
+    if(close(pipe_u[0]) == -1){
+        perror("display: close pipe A read");
+        return 1;
+    }
+    if(close(pipe_u[1]) == -1){
+        perror("display: close pipe A write");
+        return 1;
+    }
+    if(close(pipe_display[1]) == -1){
+        perror("display: close pipe D write");
+        return 1;
+    }
+
+    struct log_record data_showed;
+    ssize_t ret_read_display;
+    double last_y_value[3] = {0, 0, 0};
+    double last_u_value[2] = {0, 0};
+
+    while((ret_read_display = read(pipe_display[0], &data_showed, sizeof(data_showed))) > 0 ){
+        switch (data_showed.process_name)
+            {
+            case TASK_SAMPLING:
+                last_y_value[0] = data_showed.y[0];
+                last_y_value[1] = data_showed.y[1];
+                last_y_value[2] = data_showed.y[2];
+                break;
+            case TASK_GEN_U:
+                last_u_value[0] = data_showed.u[0];
+                last_u_value[1] = data_showed.u[1];
+                break;
+            default:
+                fprintf(stderr, "display receive a invalid process\n");
+                return 1;
+            }
+        printf("Time_us: %"PRId64"\t", data_showed.time_us);
+        printf("U value: (%g, %g)\t", last_u_value[0], last_u_value[1]);
+        printf("Y value: (%g, %g, %g)\n", last_y_value[0], last_y_value[1], last_y_value[2]);
+        fflush(stdout);
+    }
+    if(ret_read_display == -1){
+        perror("display: read pipe D");
+        return 1;
+    }
+
+    if(close(pipe_display[0]) == -1){
+        perror("display: close pipe D write");
+        return 1;
+    }
+
+    return 0;
+}
+
+int run_logger(int pipe_logger[2], const char *file_name, int pipe_sim[2], int pipe_u[2], int pipe_display[2]){
 
     struct sched_param param_logger;
     param_logger.sched_priority = 0;
@@ -73,6 +149,14 @@ int run_logger(int pipe_logger[2], const char *file_name, int pipe_sim[2], int p
         return 1;
     }
     
+    if(close(pipe_display[0]) == -1){
+        perror("logger: close pipe D write");
+        return 1;
+    }
+    if(close(pipe_display[1]) == -1){
+        perror("logger: close pipe D write");
+        return 1;
+    }
     if(close(pipe_logger[1]) == -1){
         perror("logger: close pipe C");
         return 1;
@@ -211,6 +295,21 @@ int main(int argc, char *argv[]){
         perror("logger: fcntl F_SETFL");
         return 1;
     }
+    // pipe D
+    int pipe_display[2];
+    if(pipe(pipe_display) == -1){
+        perror("display: pipe");
+        return 1;
+    }
+    int flags_pipe_display = fcntl(pipe_display[1], F_GETFL, 0);
+    if(flags_pipe_display == -1){
+        perror("display: fcntl F_GETFL");
+        return 1;
+    }
+    if(fcntl(pipe_display[1], F_SETFL, (flags_pipe_display | O_NONBLOCK)) == -1){
+        perror("display: fcntl F_SETFL");
+        return 1;
+    }
 
     if(clock_gettime(CLOCK_MONOTONIC, &timer_init) == -1){
         perror("init: clock_gettime");
@@ -265,7 +364,6 @@ int main(int argc, char *argv[]){
         
         
         else if(pid_sampling_y > 0 ){
-            
             pid_t pid_logger;
             pid_logger = fork();
             if(pid_logger < 0){
@@ -274,175 +372,196 @@ int main(int argc, char *argv[]){
             }
             // logger
             if(pid_logger == 0){
-                exit(run_logger(pipe_logger, argv[1], pipe_sim_to_save_dat, pipe_gen_u_to_sim));
+                exit(run_logger(pipe_logger, argv[1], pipe_sim_to_save_dat, pipe_gen_u_to_sim, pipe_display));
             }
-            // simulator
             else{
-
-
-                struct timespec timer_simulator;
-                struct timespec next_activation_sim;
-                next_activation_sim.tv_nsec = timer_init.tv_nsec;
-                next_activation_sim.tv_sec = timer_init.tv_sec;
-                int64_t next_activation_sim_time_ns = 0;
-                int64_t time_sim;
-                int ret_clk_n;
-                double u_array[2];
-                // x[0] hold the position x_c
-                // x[1] hold the position y_c
-                // x[2] hold the degree 
-                double x[3] = {0, 0, 0};
-                double pre_x[3] = {0, 0, 0};
-                struct log_record sim_data;
-                sim_data.process_name = TASK_SIM;
-                int dropped_sim = 0;
-                int dropped_write_sampling = 0;
-
-                // simulator just write to pipe_sim_to_dat
-                if(close(pipe_sim_to_save_dat[0]) == -1){
-                    perror("simulator: close pipe B read");
-                    return 1;
-                }
-                // simulator just read to pipe_gen_u_to_sim
-                if(close(pipe_gen_u_to_sim[1]) == -1){
-                    perror("simulator: close pipe A write");
-                    return 1;
-                }
-                // simulator just write to pipe_logger
-                if(close(pipe_logger[0]) == -1){
-                    perror("simulator: close pipe C read");
+                pid_t pid_display;
+                pid_display = fork();
+                if(pid_display < 0){
+                    perror("display: fork");
                     return 1;
                 }
 
-                if(mlockall(MCL_CURRENT | MCL_FUTURE) == -1){
-                    perror("simulator: mlockall");
-                    return 1;
+                // Display process
+                if(pid_display == 0){
+                    exit(run_display(pipe_display, pipe_sim_to_save_dat, pipe_gen_u_to_sim, pipe_logger));
                 }
+                // simulator process
+                else{
+                    struct timespec timer_simulator;
+                    struct timespec next_activation_sim;
+                    next_activation_sim.tv_nsec = timer_init.tv_nsec;
+                    next_activation_sim.tv_sec = timer_init.tv_sec;
+                    int64_t next_activation_sim_time_ns = 0;
+                    int64_t time_sim;
+                    int ret_clk_n;
+                    double u_array[2];
+                    // x[0] hold the position x_c
+                    // x[1] hold the position y_c
+                    // x[2] hold the degree 
+                    double x[3] = {0, 0, 0};
+                    double pre_x[3] = {0, 0, 0};
+                    struct log_record sim_data;
+                    sim_data.process_name = TASK_SIM;
+                    int dropped_sim = 0;
+                    int dropped_write_sampling = 0;
 
-                while((next_activation_sim_time_ns - time_init) < DURATION_NS){
-                    if(clock_gettime(CLOCK_MONOTONIC, &timer_simulator) == -1){
-                        perror("simulator: clock_gettime");
+                    // simulator just write to pipe_sim_to_dat
+                    if(close(pipe_sim_to_save_dat[0]) == -1){
+                        perror("simulator: close pipe B read");
+                        return 1;
                     }
-                    
-                    time_sim = timespec_to_ns(timer_simulator);
-
-                    if(read(pipe_gen_u_to_sim[0], u_array, sizeof(u_array)) > 0){
-                        u[0] = u_array[0];
-                        u[1] = u_array[1];
-                    }  
-                    // calcula x' 
-                    derivate(u, x, x_der);
-
-                    // calcula y
-                    result_y(x, y);
-
-                    // calcula o x
-                    next_x(x, pre_x, x_der, DT);
-                    for(int i = 0; i < 3; i++){
-                        pre_x[i] = x[i];
-                    }        
-                    
-                    if(write(pipe_sim_to_save_dat[1], y, sizeof(y)) == -1){
-                        if(errno == EAGAIN) {
-                            dropped_write_sampling++;
-                        }
-                        else if (errno == EPIPE) {
-                            // just don't do nothing
-                        }
-                        else{
-                            perror("simulator: write pipe B");
-                            return 1;
-                        } 
+                    // simulator just read to pipe_gen_u_to_sim
+                    if(close(pipe_gen_u_to_sim[1]) == -1){
+                        perror("simulator: close pipe A write");
+                        return 1;
                     }
-                    
-                    sim_data.time_us = (time_sim - time_init)/1000;
-                    sim_data.y[0] = y[0];
-                    sim_data.y[1] = y[1];
-                    sim_data.y[2] = y[2];
+                    // simulator just write to pipe_logger
+                    if(close(pipe_logger[0]) == -1){
+                        perror("simulator: close pipe C read");
+                        return 1;
+                    }
+                    if(close(pipe_display[0]) == -1){
+                        perror("simulator: close pipe D read");
+                        return 1;
+                    }
+                    if(close(pipe_display[1]) == -1){
+                        perror("simulator: close pipe D write");
+                        return 1;
+                    }    
 
-                    if(write(pipe_logger[1], &sim_data, sizeof(sim_data)) == -1){
-                        if(errno == EAGAIN) {
-                            dropped_sim++;
-                        }
-                        else if (errno == EPIPE) {
-                            // do nothing
-                        }
-                        else{
-                            perror("simulator: write pipe C");
-                            return 1;
-                        } 
+                    if(mlockall(MCL_CURRENT | MCL_FUTURE) == -1){
+                        perror("simulator: mlockall");
+                        return 1;
                     }
-                    
-                    timespec_add_ns(&next_activation_sim, T_SIM_NS);
-                    next_activation_sim_time_ns = timespec_to_ns(next_activation_sim);
 
-                    ret_clk_n = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation_sim, NULL);
-                    while (ret_clk_n == EINTR){
-                        ret_clk_n = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation_sim, NULL);
-                    }
-                    if(ret_clk_n > 0){
-                        fprintf(stderr, "simulator: %s\n", strerror(ret_clk_n));
-                    }
-                }
+                    while((next_activation_sim_time_ns - time_init) < DURATION_NS){
+                        if(clock_gettime(CLOCK_MONOTONIC, &timer_simulator) == -1){
+                            perror("simulator: clock_gettime");
+                        }
+                        
+                        time_sim = timespec_to_ns(timer_simulator);
 
-                if(dropped_sim > 0) fprintf(stderr, "simulator: %d records dropped by logger\n", dropped_sim);
-                if(dropped_write_sampling > 0) fprintf(stderr, "simulator: %d records dropped by sampling\n", dropped_write_sampling);
-                
-                if(close(pipe_sim_to_save_dat[1]) == -1){
-                    perror("simulator: close pipe B write");
-                    return 1;
-                }
-                if(close(pipe_logger[1]) == -1){
-                    perror("simulator: close pipe C");
-                    return 1;
-                }
-                
-                pid_t pid_wait;
-                int status;
-                int exit_status;
-                int signal_value;
-                int child_failed = 0;
-                do{
-                    pid_wait = wait(&status);
-                    if(pid_wait == -1){
-                        if(errno == ECHILD){
-                            // all children reaped: normal loop exit
-                        }
-                        else if(errno == EINTR){
-                            fprintf(stderr, "wait() was interrupted by a signal\n");
-                            pid_wait = 1;
-                        }
-                        else{
-                            perror("wait");
-                        }
-                    }
-                    else{
-                        if(WIFEXITED(status)){
-                            exit_status = WEXITSTATUS(status);
-                            if(exit_status == 0){
-                                // exit return the correct value
+                        if(read(pipe_gen_u_to_sim[0], u_array, sizeof(u_array)) > 0){
+                            u[0] = u_array[0];
+                            u[1] = u_array[1];
+                        }  
+                        // calcula x' 
+                        derivate(u, x, x_der);
+
+                        // calcula y
+                        result_y(x, y);
+
+                        // calcula o x
+                        next_x(x, pre_x, x_der, DT);
+                        for(int i = 0; i < 3; i++){
+                            pre_x[i] = x[i];
+                        }        
+                        
+                        if(write(pipe_sim_to_save_dat[1], y, sizeof(y)) == -1){
+                            if(errno == EAGAIN) {
+                                dropped_write_sampling++;
+                            }
+                            else if (errno == EPIPE) {
+                                // just don't do nothing
                             }
                             else{
-                                fprintf(stderr, "child %d exited with code %d\n", pid_wait, exit_status);
+                                perror("simulator: write pipe B");
+                                return 1;
+                            } 
+                        }
+                        
+                        sim_data.time_us = (time_sim - time_init)/1000;
+                        sim_data.y[0] = y[0];
+                        sim_data.y[1] = y[1];
+                        sim_data.y[2] = y[2];
+
+                        if(write(pipe_logger[1], &sim_data, sizeof(sim_data)) == -1){
+                            if(errno == EAGAIN) {
+                                dropped_sim++;
+                            }
+                            else if (errno == EPIPE) {
+                                // do nothing
+                            }
+                            else{
+                                perror("simulator: write pipe C");
+                                return 1;
+                            } 
+                        }
+                        
+                        timespec_add_ns(&next_activation_sim, T_SIM_NS);
+                        next_activation_sim_time_ns = timespec_to_ns(next_activation_sim);
+
+                        ret_clk_n = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation_sim, NULL);
+                        while (ret_clk_n == EINTR){
+                            ret_clk_n = clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_activation_sim, NULL);
+                        }
+                        if(ret_clk_n > 0){
+                            fprintf(stderr, "simulator: %s\n", strerror(ret_clk_n));
+                        }
+                    }
+
+                    if(dropped_sim > 0) fprintf(stderr, "simulator: %d records dropped by logger\n", dropped_sim);
+                    if(dropped_write_sampling > 0) fprintf(stderr, "simulator: %d records dropped by sampling\n", dropped_write_sampling);
+                    
+                    if(close(pipe_sim_to_save_dat[1]) == -1){
+                        perror("simulator: close pipe B write");
+                        return 1;
+                    }
+                    if(close(pipe_logger[1]) == -1){
+                        perror("simulator: close pipe C write");
+                        return 1;
+                    }
+                    
+                    pid_t pid_wait;
+                    int status;
+                    int exit_status;
+                    int signal_value;
+                    int child_failed = 0;
+                    do{
+                        pid_wait = wait(&status);
+                        if(pid_wait == -1){
+                            if(errno == ECHILD){
+                                // all children reaped: normal loop exit
+                            }
+                            else if(errno == EINTR){
+                                fprintf(stderr, "wait() was interrupted by a signal\n");
+                                pid_wait = 1;
+                            }
+                            else{
+                                perror("wait");
+                            }
+                        }
+                        else{
+                            if(WIFEXITED(status)){
+                                exit_status = WEXITSTATUS(status);
+                                if(exit_status == 0){
+                                    // exit return the correct value
+                                }
+                                else{
+                                    fprintf(stderr, "child %d exited with code %d\n", pid_wait, exit_status);
+                                    child_failed = 1;
+                                }
+                            }
+                            else if(WIFSIGNALED(status)){
+                                signal_value = WTERMSIG(status);
+                                fprintf(stderr, "child %d killed by signal: %d\n", pid_wait, signal_value);
                                 child_failed = 1;
                             }
                         }
-                        else if(WIFSIGNALED(status)){
-                            signal_value = WTERMSIG(status);
-                            fprintf(stderr, "child %d killed by signal: %d\n", pid_wait, signal_value);
-                            child_failed = 1;
-                        }
                     }
+                    while((pid_wait > 0)); // if the wait was interruped for the system pid_wait = 1   
+                    
+                    if(close(pipe_gen_u_to_sim[0]) == -1){
+                        perror("simulator: close pipe A read end");
+                        return 1;
+                    }
+                            
+                    return child_failed;        
                 }
-                while((pid_wait > 0)); // if the wait was interruped for the system pid_wait = 1   
-                
-                if(close(pipe_gen_u_to_sim[0]) == -1){
-                    perror("simulator: close pipe A read end");
-                    return 1;
-                }
-                         
-                return child_failed;        
+                    
             }
+
         }
         
         // sampling y
@@ -465,6 +584,11 @@ int main(int argc, char *argv[]){
             // sampling just write to pipe_logger
             if(close(pipe_logger[0]) == -1){
                 perror("sampling: close pipe C read");
+                return 1;
+            }
+            // sampling just write pipe_display
+            if(close(pipe_display[0]) == -1){
+                perror("sampling: close pipe D read");
                 return 1;
             }
 
@@ -517,6 +641,12 @@ int main(int argc, char *argv[]){
                         return 1;
                     }
                 }
+                if(write(pipe_display[1], &sampling_data, sizeof(sampling_data)) == -1){
+                    if((errno != EAGAIN) && (errno != EPIPE)){
+                        perror("sampling: write pipe D");
+                        return 1;
+                    }
+                }
 
 
                 timespec_add_ns(&next_activation_sampling, T_SAMPLING_NS);
@@ -562,6 +692,10 @@ int main(int argc, char *argv[]){
                 perror("sampling: close pipe C");
                 return 1;
             }
+            if(close(pipe_display[1]) == -1){
+                perror("sampling: close pipe D write");
+                return 1;
+            }
 
             exit(0);
         }
@@ -597,6 +731,11 @@ int main(int argc, char *argv[]){
         // generate u just write to pipe_logger
         if(close(pipe_logger[0]) == -1){
             perror("generate u: close pipe C read");
+            return 1;
+        }
+        // generate u just write to pipe_display
+        if(close(pipe_display[0]) == -1){
+            perror("generate u: close pipe D read");
             return 1;
         }
 
@@ -644,6 +783,13 @@ int main(int argc, char *argv[]){
                 }
             }
 
+            if(write(pipe_display[1], &u_data, sizeof(u_data)) == -1){
+                if((errno != EAGAIN) && (errno != EPIPE)){
+                    perror("generate u: write pipe D");
+                    return 1;
+                }
+            }
+
             timespec_add_ns(&next_activation_gen, T_GEN_U_NS);
             next_activation_gen_time_ns = timespec_to_ns(next_activation_gen);
 
@@ -667,6 +813,11 @@ int main(int argc, char *argv[]){
             perror("generate u: close pipe C");
             return 1;
         }
+        if(close(pipe_display[1]) == -1){
+            perror("generate u: close pipe D write");
+            return 1;
+        }
+
         exit(0);
     }
 
