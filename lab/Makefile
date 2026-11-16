@@ -3,7 +3,7 @@ SRCS=$(TARGET).c
 
 FLAGS= -O2 -Wall -MMD
 INCLUDE= -I. -I../include
-LIBDIR= -L../lib
+LIBDIR= -L../lib_calculus
 LIBS=-lrobo -lm
 
 CC = gcc

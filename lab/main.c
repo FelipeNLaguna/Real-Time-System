@@ -16,6 +16,7 @@
 #include <sched.h>
 #include <signal.h>
 #include "calculus.h"
+#include "rt_tasks.h"
 
 #define DT 0.03
 #define DURATION_NS 20000000000LL
