@@ -101,8 +101,16 @@ void *simulator(void *data_tasks){
                 data_sim->log_thread.y[1] = y[1];
                 data_sim->log_thread.y[2] = y[2];
                 data_sim->log_thread.process_name = TASK_SIM;
+                
                 if(buffer_append(data_sim->log_thread, &data_sim->buf) < 0){
-                    
+                    fprintf(stderr, "simulator: buffer_append\n");
+                    if(sem_post(&data_sim->sem_buffer) < 0){
+                        perror("simulator: sem_post sem_buffer");
+                        res_sim = 1;
+                        return (void *)(intptr_t) res_sim;
+                    }
+                    res_sim = 1;
+                    return (void *)(intptr_t) res_sim;
                 }
 
                 if(sem_post(&data_sim->sem_buffer) < 0){
@@ -153,6 +161,8 @@ void *simulator(void *data_tasks){
         }
         if(ret_clk_n > 0){
             fprintf(stderr, "simulator: clock_nanosleep: %s\n", strerror(ret_clk_n));
+            res_sim = 1;
+            return (void *)(intptr_t) res_sim;
         }
     }
 
