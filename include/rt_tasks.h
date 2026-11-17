@@ -31,6 +31,7 @@ struct data_tasks{
     sem_t can_save; // exist at least one item in the buffer
     double u_rt[2];
     double y_rt[3];
+    const char *file_name;
 };
 
 extern void *simulator(void *data_tasks);
