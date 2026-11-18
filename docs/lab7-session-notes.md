@@ -48,6 +48,24 @@ Aluno trabalha até ~15h30 no código; depois medições e relatório.
 - Validação: trajetória (`y[1]` × `y[0]`) deve ser um **8** (dois círculos de
   raio 1/(0,2π) ≈ 1,59, 10 s cada, sentidos opostos); 400/667/400 linhas.
 
+## Estado em 18/11 (entrega atrasada) — programa funcionando
+
+- Roda na máquina RT: `exit=0`, 20 s, logger encerra pelo `sem_post(can_save)`
+  extra do `main` (fila vazia ao acordar = fim, `break`). Display periódico
+  (`clock_nanosleep` relativo de 200 ms; antes usava `TIMER_ABSTIME` com
+  duração = não dormia → milhões de linhas e ~330 descartes).
+- Descartes restantes (27–53/execução) = **colisão entre RT** no `sem_buffer`
+  (gen_u e sampling mesma fase; simulator só em múltiplos de 150 ms). Nunca
+  faltam gen_u e sampling no mesmo k. Mensagem "dropped by logger" imprecisa.
+- Temporização (t4, sem buracos): T std 0,011–0,032 ms, L máx 89–100 µs.
+  Picos de 2T/3T/4T no `period.png` = buracos do log, não atrasos.
+- Relatório gerado como Claude Doc (figuras u, y, trajetória 8, período,
+  latência). Medição com `hackbench` **não feita**; liberação síncrona não feita.
+- Português restante: `derivate.c` (`seno_matriz`, comentários). `derivate`
+  ignora `u[0]`.
+- `lab/` limpo em 18/11 a pedido dele (apagou medições do lab 5 e
+  `results_lab7`, inválido).
+
 ## Estado em 17/11 (antes do commit "main + Makefiles")
 
 - ✅ simulator, gen_u, sampling: corretos (`a15ede2`, `7d0f89c`). Limpeza

@@ -1,7 +1,9 @@
 #include <errno.h>
 #include <stdio.h>
+#include <string.h>
 #include <inttypes.h>
 #include "rt_tasks.h"
+#define SLEEP_TIME_NS 200000000
 
 void *display(void *data_tasks){
 
@@ -13,6 +15,10 @@ void *display(void *data_tasks){
     int ret_wait_end;
     int num_threads_finished = 0;
     int result_display = 0;
+    int ret_clk_ns;
+    struct timespec sleep_time_display_ns;
+    sleep_time_display_ns.tv_nsec = SLEEP_TIME_NS;
+    sleep_time_display_ns.tv_sec = 0;
 
     while((num_threads_finished < 3) || (buffer_count(&data_display->buf) != 0)){
         
@@ -38,7 +44,6 @@ void *display(void *data_tasks){
                 last_u_value[1] = data_display->log_thread.u[1];
                 break;
             default:
-                fprintf(stderr, "display receive a invalid process\n");
                 break;
             }
        
@@ -48,14 +53,14 @@ void *display(void *data_tasks){
             return (void *)(intptr_t) result_display;
         }
         
-        
+
 // *******************************************************************************************
         printf("Time_us: %"PRId64"\t", time_display_us);
         printf("U value: (%g, %g)\t", last_u_value[0], last_u_value[1]);
         printf("Y value: (%g, %g, %g)\n", last_y_value[0], last_y_value[1], last_y_value[2]);
         fflush(stdout);
 
-        // ***********************************Critical********************************************************
+// ***********************************Critical********************************************************
         while(((ret_wait_end = sem_wait(&data_display->sem_end)) == -1) && errno == EINTR){
                 // try again after EINTR
         }
@@ -73,6 +78,17 @@ void *display(void *data_tasks){
             return (void *)(intptr_t) result_display;
         }
 // ************************************************************************************************************        
+    
+        ret_clk_ns = clock_nanosleep(CLOCK_MONOTONIC, 0, &sleep_time_display_ns, NULL);
+        while (ret_clk_ns == EINTR){
+            ret_clk_ns = clock_nanosleep(CLOCK_MONOTONIC, 0, &sleep_time_display_ns, NULL);
+        }
+        if(ret_clk_ns > 0){
+            fprintf(stderr, "display: clock_nanosleep: %s\n", strerror(ret_clk_ns));
+            result_display = 1;
+            return (void *)(intptr_t) result_display;
+        }
+    
     }
 
     return (void *)(intptr_t)result_display;

@@ -74,30 +74,28 @@ void *logger (void * data_tasks){
         while(((ret_wait_save = sem_wait(&data_logger->can_save)) == -1) && errno == EINTR){
             // try again after EINTR
         }
-        while(((ret_wait_buf = sem_wait(&data_logger->sem_buffer)) == -1) && errno == EINTR){
-            // try again after EINTR
-        }
-
-        if(buffer_take(&data_logger->log_thread, &data_logger->buf) < 0){
-            fprintf(stderr, "logger: buffer_take\n");
-            if(sem_post(&data_logger->sem_buffer) < 0){
-                perror("logger: sem_post sem_buffer");
-                return_log = 1;
-                return (void *)(intptr_t) return_log;
-            }
-            return_log = 1;
-            return (void *)(intptr_t) return_log;
-        }
-
         if(ret_wait_save == -1){
             perror("logger: sem_wait can_save");
             return_log = 1;
             return (void *)(intptr_t) return_log;
         }
+        
+        while(((ret_wait_buf = sem_wait(&data_logger->sem_buffer)) == -1) && errno == EINTR){
+            // try again after EINTR
+        }
         if(ret_wait_buf == -1){
             perror("logger: sem_wait sem_buffer");
             return_log = 1;
             return (void *)(intptr_t) return_log;
+        }
+
+        if(buffer_take(&data_logger->log_thread, &data_logger->buf) < 0){
+            if(sem_post(&data_logger->sem_buffer) < 0){
+                perror("logger: sem_post sem_buffer");
+                return_log = 1;
+                return (void *)(intptr_t) return_log;
+            }
+            break;
         }
 
         u_log[0] = data_logger->log_thread.u[0];

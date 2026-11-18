@@ -152,6 +152,12 @@ int main(int argc, char *argv[]){
         return 1;
     }
 
-    return 0;
+    sem_destroy(&data_main.can_save);
+    sem_destroy(&data_main.can_send);
+    sem_destroy(&data_main.sem_buffer);
+    sem_destroy(&data_main.sem_end);
+    sem_destroy(&data_main.sem_variable_u);
+    sem_destroy(&data_main.sem_variable_y);
 
+    return 0;
 }
