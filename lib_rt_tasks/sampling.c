@@ -132,5 +132,27 @@ void *sampling(void *data_tasks){
 
     if(dropped_sampling > 0) fprintf(stderr, "sampling: %d records dropped by logger\n", dropped_sampling);
 
+    int ret_wait_end;
+
+// ***********************************Critical********************************************************
+    while(((ret_wait_end = sem_wait(&data_sampling->sem_end)) == -1) && errno == EINTR){
+            // try again after EINTR
+    }
+    if(ret_wait_end == -1){
+        perror("sampling: sem_wait sem_end");
+        result_sampling = 1;
+        return (void *)(intptr_t) result_sampling;
+    }
+
+    data_sampling->num_threads_finished = data_sampling->num_threads_finished + 1;
+
+    if(sem_post(&data_sampling->sem_end) < 0){
+        perror("sampling: sem_post sem_end");
+        result_sampling = 1;
+        return (void *)(intptr_t) result_sampling;
+    }
+// ************************************************************************************************************    
+
+
     return (void *)(intptr_t)result_sampling;
 }

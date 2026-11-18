@@ -4,7 +4,7 @@ SRCS=$(TARGET).c
 FLAGS= -O2 -Wall -MMD -pthread
 INCLUDE= -I. -I../include
 LIBDIR= -L../lib_calculus -L../lib_buffer -L../lib_rt_tasks
-LIBS=-lrobo -lrealtime -lm  -lbuf -pthread
+LIBS=-lrealtime -lrobo -lm  -lbuf -pthread
 
 CC = gcc
 CFLAGS= $(FLAGS) $(INCLUDE)

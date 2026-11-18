@@ -170,6 +170,26 @@ void *simulator(void *data_tasks){
     fprintf(stderr, "simulator: %d records dropped by logger\n", dropped_sim);
     }
 
-    return (void *)(intptr_t)res_sim;        
+    int ret_wait_end;
 
+// ***********************************Critical********************************************************
+    while(((ret_wait_end = sem_wait(&data_sim->sem_end)) == -1) && errno == EINTR){
+            // try again after EINTR
+    }
+    if(ret_wait_end == -1){
+        perror("simulator: sem_wait sem_end");
+        res_sim = 1;
+        return (void *)(intptr_t) res_sim;
+    }
+
+    data_sim->num_threads_finished = data_sim->num_threads_finished + 1;
+
+    if(sem_post(&data_sim->sem_end) < 0){
+        perror("simulator: sem_post sem_end");
+        res_sim = 1;
+        return (void *)(intptr_t) res_sim;
+    }
+// ************************************************************************************************************    
+
+    return (void *)(intptr_t)res_sim;
 }

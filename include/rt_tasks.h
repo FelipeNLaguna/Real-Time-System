@@ -29,9 +29,11 @@ struct data_tasks{
     sem_t sem_buffer;
     sem_t can_send; // exist at least one empty slot
     sem_t can_save; // exist at least one item in the buffer
+    sem_t sem_end;
     double u_rt[2];
     double y_rt[3];
     const char *file_name;
+    int num_threads_finished;
 };
 
 extern void *simulator(void *data_tasks);

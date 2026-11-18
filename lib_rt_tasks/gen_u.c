@@ -143,5 +143,26 @@ void *gen_u(void *data_tasks){
         fprintf(stderr, "generate u: %d records dropped by logger\n", dropped_u);
     }
 
+    int ret_wait_end; 
+
+// ***********************************Critical********************************************************
+    while(((ret_wait_end = sem_wait(&data_u->sem_end)) == -1) && errno == EINTR){
+            // try again after EINTR
+    }
+    if(ret_wait_end == -1){
+        perror("generate u: sem_wait sem_end");
+        result_u = 1;
+        return (void *)(intptr_t) result_u;
+    }
+
+    data_u->num_threads_finished = data_u->num_threads_finished + 1;
+
+    if(sem_post(&data_u->sem_end) < 0){
+        perror("generate u: sem_post sem_end");
+        result_u = 1;
+        return (void *)(intptr_t) result_u;
+    }
+// ************************************************************************************************************    
+
     return (void *)(intptr_t)result_u;
 }
