@@ -33,7 +33,7 @@ Estas instruções valem para todos os laboratórios, atuais e futuros.
 ## Início de cada sessão
 
 Primeiro, leia as notas de sessão mais recentes em `docs/` (hoje:
-`docs/lab5-session-notes.md`): elas têm o estado atual, o próximo ticket e o
+`docs/lab7-session-notes.md`): elas têm o estado atual, o próximo ticket e o
 jeito de trabalhar que combinamos.
 
 Antes de qualquer coisa, me pergunte (se eu ainda não tiver dito):
